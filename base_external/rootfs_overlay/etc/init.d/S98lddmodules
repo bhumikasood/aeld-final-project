@@ -1,0 +1,30 @@
+#!/bin/sh
+
+case "$1" in
+    start)
+        # Load I2C Modules
+        echo "Loading I2C modules"
+        modprobe i2c-bcm2835 || echo "Failed to load i2c-bcm2835"
+        modprobe i2c-dev || echo "Failed to load i2c-dev"
+    ;;
+
+    stop)
+        # I2C Modules
+        echo "Unloading I2C modules"
+        rmmod i2c-dev
+        rmmod i2c-bcm2835
+	;;
+
+    restart)
+        $0 stop
+        $0 start
+    ;;
+
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+    ;;
+
+esac
+
+exit 0
