@@ -1,0 +1,4 @@
+config BR2_PACKAGE_CLIMATE_CONTROL
+	bool "climate-control"
+	help
+	  Climate Control System: kernel drivers.

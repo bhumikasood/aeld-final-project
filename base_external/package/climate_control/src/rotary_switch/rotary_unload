@@ -1,0 +1,8 @@
+#!/bin/sh
+# Unload the rotary switch module and remove /dev/rotary_switch.
+
+module="rotary_switch"
+device="rotary_switch"
+
+rm -f /dev/${device}
+rmmod $module

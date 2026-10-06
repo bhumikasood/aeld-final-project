@@ -6,6 +6,3 @@ An embedded Linux based climate control system emulator.
 
 The project overview can be found here: [Climate Control System](https://github.com/bhumikasood/aeld-final-project/wiki/Climate-Control-System-%E2%80%90-Project-Overview)
 
-To make Raspberry Pi model 3 B and B+:
-
-  $ make raspberrypi3_defconfig
