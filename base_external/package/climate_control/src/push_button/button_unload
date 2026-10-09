@@ -1,0 +1,8 @@
+#!/bin/sh
+# Unload the push button module and remove /dev/push_button.
+
+module="push_button"
+device="push_button"
+
+rm -f /dev/${device}
+rmmod $module

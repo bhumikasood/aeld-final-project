@@ -64,7 +64,7 @@ static int button_release(struct inode *inode, struct file *filp)
 }
 
 
-// Read debounced rotary switch position
+// Read debounced button state
 static int button_read_state(void)
 {
     // Get initial reading of button
@@ -122,7 +122,7 @@ static const struct file_operations button_fops =
 
 static int button_setup_cdev(struct push_button_dev *dev)
 {
-    int err, devno = MKDEV(button_major button_minor);
+    int err, devno = MKDEV(button_major, button_minor);
 
     cdev_init(&dev->cdev, &button_fops);
     dev->cdev.owner = THIS_MODULE;
@@ -193,5 +193,5 @@ static void button_cleanup_module(void)
     PDEBUG("Unloaded Button Device");
 }
 
-module_init(rotary_init_module);
-module_exit(rotary_cleanup_module);
+module_init(button_init_module);
+module_exit(button_cleanup_module);
