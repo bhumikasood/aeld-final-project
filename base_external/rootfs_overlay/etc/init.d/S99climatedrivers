@@ -1,0 +1,40 @@
+#!/bin/sh
+# Load the climate control drivers at boot and create the /dev nodes.
+# Runs after S98lddmodules
+
+case "$1" in
+    start)
+        # Load climate control system drivers
+        echo "Loading climate control system drivers"
+        # Load rotary switch driver
+        echo "Loading rotary_switch driver"
+        rotary_load || echo " rotary_switch failed to load"
+        # Load push button driver
+        echo "Loading push_button driver"
+        button_load || echo "  push_button failed to load"
+        # Load temp sensor driver
+        echo "Loading temp_sensor driver"
+        temp_sensor_load || echo "  temp_sensor failed to load"
+    ;;
+
+    stop)
+        # Unload climate control system drivers
+        echo "Unloading climate control drivers"
+        rotary_unload || echo " rotary_switch failed to unload"
+        button_unload || echo " push_button failed to unload"
+        temp_sensor_unload || echo " temp_sensor failed to unload"
+    ;;
+
+    restart)
+        $0 stop
+        $0 start
+    ;;
+
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+    ;;
+
+esac
+
+exit 0
