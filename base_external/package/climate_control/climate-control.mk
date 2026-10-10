@@ -23,6 +23,11 @@ define CLIMATE_CONTROL_BUILD_CMDS
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
 		-o $(@D)/bme280_sensor/temp_sensor_test \
 		$(@D)/bme280_sensor/temp_sensor_test.c
+	
+	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
+        -I$(@D)/rotary_switch -I$(@D)/push_button -I$(@D)/bme280_sensor \
+        -o $(@D)/climate_app/climate_app \
+        $(@D)/climate_app/climate_app.c
 endef
 
 # Install
@@ -38,6 +43,8 @@ define CLIMATE_CONTROL_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/temp_sensor_test $(TARGET_DIR)/usr/bin/temp_sensor_test
 	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/temp_sensor_load $(TARGET_DIR)/usr/bin/temp_sensor_load
 	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/temp_sensor_unload $(TARGET_DIR)/usr/bin/temp_sensor_unload
+
+	$(INSTALL) -D -m 0755 $(@D)/climate_app/climate_app $(TARGET_DIR)/usr/bin/climate_app
 endef
 
 $(eval $(kernel-module))
