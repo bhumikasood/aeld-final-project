@@ -1,0 +1,20 @@
+#!/bin/sh
+# Load the temperature sensor module and create /dev/temp_sensor.
+
+module="temp_sensor"
+device="temp_sensor"
+mode="664"
+
+set -e
+
+modprobe $module || exit 1
+
+major=$(awk "\$2==\"$device\" {print \$1}" /proc/devices)
+if [ -z "$major" ]; then
+	echo "$device not found in /proc/devices"
+	exit 1
+fi
+
+rm -f /dev/${device}
+mknod /dev/${device} c $major 0
+chmod $mode /dev/${device}

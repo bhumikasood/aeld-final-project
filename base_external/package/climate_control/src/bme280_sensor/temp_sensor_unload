@@ -1,0 +1,8 @@
+#!/bin/sh
+# Unload the temperature sensor module and remove /dev/temp_sensor.
+
+module="temp_sensor"
+device="temp_sensor"
+
+rm -f /dev/${device}
+rmmod $module
