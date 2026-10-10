@@ -1,0 +1,1 @@
+obj-m := temp_sensor.o
