@@ -1,15 +1,15 @@
 /**
- * @file temp_sensor.h
+ * @file bme280.h
  * @author Bhumika Sood
- * @brief Device structure for the BME280 temperature sensor driver
+ * @brief Device structure for the BME280 temperature/humidity sensor driver
  */
  
-#ifndef TEMP_SENSOR_H
-#define TEMP_SENSOR_H
+#ifndef BME280_H
+#define BME280_H
 
 #undef PDEBUG
 #ifdef __KERNEL__
-#define PDEBUG(fmt, args...) printk(KERN_DEBUG "temp_sensor: " fmt "\n", ## args)
+#define PDEBUG(fmt, args...) printk(KERN_DEBUG "bme280: " fmt "\n", ## args)
 #else
 #define PDEBUG(fmt, args...) fprintf(stderr, fmt, ## args)
 #endif
@@ -37,13 +37,13 @@ typedef struct
     int16_t dig_H4; 
     int16_t dig_H5; 
     int8_t dig_H6;  
-} bme280_calib_data;
+} bme280_calibration_data;
 
-struct temp_sensor_dev
+struct bme280_dev
 {
     struct cdev cdev;
     struct i2c_client *client;
-    bme280_calib_data temp_calibration;
+    bme280_calibration_data calibration;
 };
 
-#endif /* TEMP_SENSOR_H */
+#endif /* BME280_H */

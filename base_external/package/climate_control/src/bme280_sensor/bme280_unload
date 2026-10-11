@@ -1,0 +1,8 @@
+#!/bin/sh
+# Unload the temperature sensor module and remove /dev/bme280.
+
+module="bme280"
+device="bme280"
+
+rm -f /dev/${device}
+rmmod $module

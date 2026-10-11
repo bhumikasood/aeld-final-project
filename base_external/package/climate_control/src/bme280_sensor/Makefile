@@ -1,1 +1,1 @@
-obj-m := temp_sensor.o
+obj-m := bme280.o

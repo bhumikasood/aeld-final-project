@@ -21,8 +21,8 @@ define CLIMATE_CONTROL_BUILD_CMDS
 		$(@D)/push_button/button_test.c
 
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
-		-o $(@D)/bme280_sensor/temp_sensor_test \
-		$(@D)/bme280_sensor/temp_sensor_test.c
+		-o $(@D)/bme280_sensor/bme280_test \
+		$(@D)/bme280_sensor/bme280_test.c
 
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
 	    -o $(@D)/lcd_display/lcd_test \
@@ -44,9 +44,9 @@ define CLIMATE_CONTROL_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(@D)/push_button/button_load $(TARGET_DIR)/usr/bin/button_load
 	$(INSTALL) -D -m 0755 $(@D)/push_button/button_unload $(TARGET_DIR)/usr/bin/button_unload
 
-	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/temp_sensor_test $(TARGET_DIR)/usr/bin/temp_sensor_test
-	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/temp_sensor_load $(TARGET_DIR)/usr/bin/temp_sensor_load
-	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/temp_sensor_unload $(TARGET_DIR)/usr/bin/temp_sensor_unload
+	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/bme280_test $(TARGET_DIR)/usr/bin/bme280_test
+	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/bme280_load $(TARGET_DIR)/usr/bin/bme280_load
+	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/bme280_unload $(TARGET_DIR)/usr/bin/bme280_unload
 
 	$(INSTALL) -D -m 0755 $(@D)/lcd_display/lcd_test $(TARGET_DIR)/usr/bin/lcd_test
     $(INSTALL) -D -m 0755 $(@D)/lcd_display/lcd_display_load $(TARGET_DIR)/usr/bin/lcd_display_load

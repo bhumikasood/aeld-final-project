@@ -1,8 +1,8 @@
 #!/bin/sh
-# Load the temperature sensor module and create /dev/temp_sensor.
+# Load the BME280 temperature/humidity sensor module and create /dev/bme280.
 
-module="temp_sensor"
-device="temp_sensor"
+module="bme280"
+device="bme280"
 mode="664"
 
 set -e

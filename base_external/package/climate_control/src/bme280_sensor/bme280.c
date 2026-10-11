@@ -1,5 +1,5 @@
 /**
- * @file temp_sensor.c
+ * @file bme280.c
  * @author Bhumika Sood
  * @brief Functions and data related to the BME280 sensor driver implementation
  *
@@ -22,11 +22,11 @@
 #include <linux/i2c.h>
 #include <linux/err.h> 
 
-#include "temp_sensor.h"
-#include "temp_ioctl.h"
+#include "bme280.h"
+#include "bme280_ioctl.h"
 
-#define TEMP_I2C_BUS        1   
-#define TEMP_I2C_ADDR       0x77
+#define BME280_I2C_BUS      1   
+#define BME280_I2C_ADDR     0x77
 #define BME280_TEMP_SKIPPED 0x80000  
 #define BME280_RESET_VALUE  0xB6
 #define BME280_CTRL_MEAS    0x23
@@ -70,37 +70,37 @@ enum
 };
 
 // Function prototypes
-static int temp_sensor_open(struct inode *inode, struct file *filp);
-static int temp_sensor_release(struct inode *inode, struct file *filp);
-static long temp_sensor_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
-static int temp_sensor_setup_cdev(struct temp_sensor_dev *dev);
-static int temp_sensor_hw_init(struct temp_sensor_dev *dev);
-static int temp_sensor_read_temp(struct temp_sensor_dev *dev, int *temp);
-static int temp_sensor_init_module(void);
-static void temp_sensor_cleanup_module(void);
+static int bme280_open(struct inode *inode, struct file *filp);
+static int bme280_release(struct inode *inode, struct file *filp);
+static long bme280_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
+static int bme280_setup_cdev(struct bme280_dev *dev);
+static int bme280_hw_init(struct bme280_dev *dev);
+static int bme280_read_temp(struct bme280_dev *dev, int *temp);
+static int bme280_init_module(void);
+static void bme280_cleanup_module(void);
 
-static int temp_sensor_major = 0;
-static int temp_sensor_minor = 0;
+static int bme280_major = 0;
+static int bme280_minor = 0;
 
 MODULE_AUTHOR("Bhumika Sood");
 MODULE_LICENSE("Dual BSD/GPL");
 
-static struct temp_sensor_dev temp_sensor_device;
+static struct bme280_dev bme280_device;
 
-static int temp_sensor_open(struct inode *inode, struct file *filp)
+static int bme280_open(struct inode *inode, struct file *filp)
 {
 	PDEBUG("Open BME280 Sensor Device");
 
 	// Locate device structure
-	struct temp_sensor_dev *dev;
-    dev = container_of(inode->i_cdev, struct temp_sensor_dev, cdev);
+	struct bme280_dev *dev;
+    dev = container_of(inode->i_cdev, struct bme280_dev, cdev);
     // Point to device data
     filp->private_data = dev;
 
     return 0;
 }
 
-static int temp_sensor_release(struct inode *inode, struct file *filp)
+static int bme280_release(struct inode *inode, struct file *filp)
 {
     PDEBUG("Release BME280 Sensor Device");
     return 0;
@@ -108,7 +108,7 @@ static int temp_sensor_release(struct inode *inode, struct file *filp)
 
 
 // Get a temperature reading from the sensor and convert it to celcius
-static int temp_sensor_read_temp(struct temp_sensor_dev *dev, int *temp)
+static int bme280_read_temp(struct bme280_dev *dev, int *temp)
 {
     // Get reading of temperature
     uint8_t temp_buffer[3];
@@ -129,32 +129,32 @@ static int temp_sensor_read_temp(struct temp_sensor_dev *dev, int *temp)
     }
 
     // Compensation equations from BME280 datasheet
-    int var_1 = (((raw_temp >> 3) - ((int)dev->temp_calibration.dig_T1 << 1)) 
-                * dev->temp_calibration.dig_T2) >> 11;
-    int var_2 = ((((raw_temp >> 4) - dev->temp_calibration.dig_T1)
-                * ((raw_temp >> 4) - dev->temp_calibration.dig_T1) >> 12)
-                * dev->temp_calibration.dig_T3) >> 14;
+    int var_1 = (((raw_temp >> 3) - ((int)dev->calibration.dig_T1 << 1)) 
+                * dev->calibration.dig_T2) >> 11;
+    int var_2 = ((((raw_temp >> 4) - dev->calibration.dig_T1)
+                * ((raw_temp >> 4) - dev->calibration.dig_T1) >> 12)
+                * dev->calibration.dig_T3) >> 14;
     
     *temp = (((var_1 + var_2) * 5) + 128) >> 8;
     return 0;
 }
 
-static long temp_sensor_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+static long bme280_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-    struct temp_sensor_dev *dev = filp->private_data;
+    struct bme280_dev *dev = filp->private_data;
     long retval = 0;
 
-    if (_IOC_TYPE(cmd) != TEMP_IOC_MAGIC)
+    if (_IOC_TYPE(cmd) != BME280_IOC_MAGIC)
     {
         return -ENOTTY;
     }
 
     switch (cmd)
     {
-        case TEMP_IOC_GET_TEMP:
+        case BME280_IOC_GET_TEMP:
         {
             int temp = 0;
-            retval = temp_sensor_read_temp(dev, &temp);
+            retval = bme280_read_temp(dev, &temp);
             if (retval)
             {
                 break;
@@ -174,21 +174,21 @@ static long temp_sensor_ioctl(struct file *filp, unsigned int cmd, unsigned long
     return retval;
 }
 
-static const struct file_operations temp_sensor_fops = 
+static const struct file_operations bme280_fops = 
 {
     .owner =          THIS_MODULE,
-    .open =           temp_sensor_open,
-    .release =        temp_sensor_release,
-    .unlocked_ioctl = temp_sensor_ioctl,
+    .open =           bme280_open,
+    .release =        bme280_release,
+    .unlocked_ioctl = bme280_ioctl,
 };
 
-static int temp_sensor_setup_cdev(struct temp_sensor_dev *dev)
+static int bme280_setup_cdev(struct bme280_dev *dev)
 {
-    int err, devno = MKDEV(temp_sensor_major, temp_sensor_minor);
+    int err, devno = MKDEV(bme280_major, bme280_minor);
 
-    cdev_init(&dev->cdev, &temp_sensor_fops);
+    cdev_init(&dev->cdev, &bme280_fops);
     dev->cdev.owner = THIS_MODULE;
-    dev->cdev.ops = &temp_sensor_fops;
+    dev->cdev.ops = &bme280_fops;
     err = cdev_add(&dev->cdev, devno, 1);
     if (err)
     {
@@ -197,19 +197,19 @@ static int temp_sensor_setup_cdev(struct temp_sensor_dev *dev)
     return err;
 }
 
-static int temp_sensor_hw_init(struct temp_sensor_dev *dev)
+static int bme280_hw_init(struct bme280_dev *dev)
 {
     // Find the I2C bus the sensor is connected to
     int result;
-    struct i2c_adapter *adapter = i2c_get_adapter(TEMP_I2C_BUS);
+    struct i2c_adapter *adapter = i2c_get_adapter(BME280_I2C_BUS);
     if (!adapter)
     {
-        printk(KERN_WARNING "I2C bus %d not found\n", TEMP_I2C_BUS);
+        printk(KERN_WARNING "I2C bus %d not found\n", BME280_I2C_BUS);
         return -ENODEV;
     }
 
     // Create the I2C client for the sensor
-    dev->client = i2c_new_dummy_device(adapter, TEMP_I2C_ADDR);
+    dev->client = i2c_new_dummy_device(adapter, BME280_I2C_ADDR);
     i2c_put_adapter(adapter);
     if (IS_ERR(dev->client))
     {
@@ -245,9 +245,9 @@ static int temp_sensor_hw_init(struct temp_sensor_dev *dev)
     }
 
     // Convert and store calibration data per BME280 datasheet
-    dev->temp_calibration.dig_T1 = (uint16_t)(calibration_data[0] | (calibration_data[1] << 8));
-    dev->temp_calibration.dig_T2 = (int16_t)(calibration_data[2] | (calibration_data[3] << 8));
-    dev->temp_calibration.dig_T3 = (int16_t)(calibration_data[4] | (calibration_data[5] << 8));
+    dev->calibration.dig_T1 = (uint16_t)(calibration_data[0] | (calibration_data[1] << 8));
+    dev->calibration.dig_T2 = (int16_t)(calibration_data[2] | (calibration_data[3] << 8));
+    dev->calibration.dig_T3 = (int16_t)(calibration_data[4] | (calibration_data[5] << 8));
 
     // Temperature x1, pressure off, normal mode: the chip keeps measuring
     result = i2c_smbus_write_byte_data(dev->client, BME280_REGISTER_CONTROL, BME280_CTRL_MEAS);
@@ -264,39 +264,39 @@ unregister_device:
     return result;
 }
 
-static int temp_sensor_init_module(void)
+static int bme280_init_module(void)
 {
     dev_t dev = 0;
     int result;
 
-    result = alloc_chrdev_region(&dev, temp_sensor_minor, 1, TEMP_DEVICE_NAME);
-    temp_sensor_major = MAJOR(dev);
+    result = alloc_chrdev_region(&dev, bme280_minor, 1, BME280_DEVICE_NAME);
+    bme280_major = MAJOR(dev);
 
     if (result < 0)
     {
-        printk(KERN_WARNING "Can't get major %d\n", temp_sensor_major);
+        printk(KERN_WARNING "Can't get major %d\n", bme280_major);
         return result;
     }
 
     // Initialize device to zero
-    memset(&temp_sensor_device, 0, sizeof(struct temp_sensor_dev));
+    memset(&bme280_device, 0, sizeof(struct bme280_dev));
 
     // Setup device
-    result = temp_sensor_hw_init(&temp_sensor_device);
+    result = bme280_hw_init(&bme280_device);
     if (result)
     {
         goto unregister_region;
     }
 
     // Register character device
-    result = temp_sensor_setup_cdev(&temp_sensor_device);
+    result = bme280_setup_cdev(&bme280_device);
     if (result)
     {
-        i2c_unregister_device(temp_sensor_device.client);        
+        i2c_unregister_device(bme280_device.client);        
         goto unregister_region;
     }
 
-    PDEBUG("Loaded, major %d", temp_sensor_major);
+    PDEBUG("Loaded, major %d", bme280_major);
     return 0;
 
 unregister_region:
@@ -304,16 +304,16 @@ unregister_region:
     return result;
 }
 
-static void temp_sensor_cleanup_module(void)
+static void bme280_cleanup_module(void)
 {
-    dev_t devno = MKDEV(temp_sensor_major, temp_sensor_minor);
+    dev_t devno = MKDEV(bme280_major, bme280_minor);
 
-    cdev_del(&temp_sensor_device.cdev);
-    i2c_unregister_device(temp_sensor_device.client);
+    cdev_del(&bme280_device.cdev);
+    i2c_unregister_device(bme280_device.client);
     unregister_chrdev_region(devno, 1);
 
     PDEBUG("Unloaded BME280 Sensor Device");
 }
 
-module_init(temp_sensor_init_module);
-module_exit(temp_sensor_cleanup_module);
+module_init(bme280_init_module);
+module_exit(bme280_cleanup_module);
