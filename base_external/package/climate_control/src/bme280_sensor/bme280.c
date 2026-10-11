@@ -25,13 +25,18 @@
 #include "bme280.h"
 #include "bme280_ioctl.h"
 
+// I2C connection information
 #define BME280_I2C_BUS      1   
 #define BME280_I2C_ADDR     0x77
-#define BME280_TEMP_SKIPPED 0x80000  
-#define BME280_RESET_VALUE  0xB6
-#define BME280_CTRL_MEAS    0x23
 
-// Defined in the BME280 datasheet
+// Register values
+#define BME280_TEMP_SKIPPED       0x80000
+#define BME280_HUMID_SKIPPED      0x8000    
+#define BME280_RESET_VALUE        0xB6
+#define BME280_TEMP_CTRL_MEAS     0x23
+#define BME280_HUMID_CTRL_MEAS    0x01
+
+// Register mapping defined in the BME280 datasheet
 enum 
 {
     BME280_REGISTER_DIG_T1 = 0x88,
@@ -75,7 +80,9 @@ static int bme280_release(struct inode *inode, struct file *filp);
 static long bme280_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 static int bme280_setup_cdev(struct bme280_dev *dev);
 static int bme280_hw_init(struct bme280_dev *dev);
-static int bme280_read_temp(struct bme280_dev *dev, int *temp);
+static int bme280_read_measurements(struct bme280_dev *dev, int *temp, int *humidity);
+static int bme280_compensate_temp(struct bme280_dev *dev, int raw_temp);
+static int bme280_compensate_humidity(struct bme280_dev *dev, int t_fine, int raw_humidity);
 static int bme280_init_module(void);
 static void bme280_cleanup_module(void);
 
@@ -106,36 +113,74 @@ static int bme280_release(struct inode *inode, struct file *filp)
     return 0;
 }
 
-
-// Get a temperature reading from the sensor and convert it to celcius
-static int bme280_read_temp(struct bme280_dev *dev, int *temp)
+// Temperature compensation equations from BME280 datasheet
+static int bme280_compensate_temp(struct bme280_dev *dev, int raw_temp)
 {
-    // Get reading of temperature
-    uint8_t temp_buffer[3];
-    int result = i2c_smbus_read_i2c_block_data(dev->client, BME280_REGISTER_TEMPDATA, 3, temp_buffer);
-    if (result != 3)
-    {
-        // Return error code
-        return (result < 0) ? result : -EIO; 
-    }
-
-    // Readout and compensation per BME280 data sheet
-    int raw_temp = (temp_buffer[0] << 12) | // [19:12]
-                   (temp_buffer[1] << 4) |  // [11:4]
-                   (temp_buffer[2] >> 4);   // [3:0]
-    if (raw_temp == BME280_TEMP_SKIPPED)
-    {
-        return -EAGAIN;
-    }
-
-    // Compensation equations from BME280 datasheet
     int var_1 = (((raw_temp >> 3) - ((int)dev->calibration.dig_T1 << 1)) 
                 * dev->calibration.dig_T2) >> 11;
     int var_2 = ((((raw_temp >> 4) - dev->calibration.dig_T1)
                 * ((raw_temp >> 4) - dev->calibration.dig_T1) >> 12)
                 * dev->calibration.dig_T3) >> 14;
-    
-    *temp = (((var_1 + var_2) * 5) + 128) >> 8;
+    int t_fine = var_1 + var_2;
+
+    return t_fine; 
+}
+
+// Humidity compensation equations from BME280 datasheet
+static int bme280_compensate_humidity(struct bme280_dev *dev, int t_fine, int raw_humidity)
+{
+    int humidity = t_fine - 76800;
+    humidity = (((((raw_humidity << 14) - ((int)dev->calibration.dig_H4 << 20)
+               - ((int)dev->calibration.dig_H5 * humidity)) + 16384) >> 15)
+               * (((((((humidity * (int)dev->calibration.dig_H6) >> 10)
+               * (((humidity * (int)dev->calibration.dig_H3) >> 11) + 32768)) >> 10)
+               + 2097152) * (int)dev->calibration.dig_H2 + 8192) >> 14));
+    humidity = humidity - (((((humidity >> 15) * (humidity >> 15)) >> 7)
+               * (int)dev->calibration.dig_H1) >> 4);
+               
+    if (humidity < 0)
+    {
+        humidity = 0;
+    }
+    if (humidity > 419430400)
+    {
+        humidity = 419430400;
+    }
+
+    return (((humidity >> 12) * 100) >> 10);
+}
+
+// Get measurement readings from sensor
+static int bme280_read_measurements(struct bme280_dev *dev, int *temp, int *humidity)
+{
+    // Get temperature and humidity readings
+    uint8_t buffer[5];
+    int result = i2c_smbus_read_i2c_block_data(dev->client, BME280_REGISTER_TEMPDATA, 5, buffer);
+    if (result != 5)
+    {
+        // Return error code
+        return (result < 0) ? result : -EIO; 
+    }
+
+    // Temperature readout per BME280 data sheet
+    int raw_temp = (buffer[0] << 12) | // [19:12]
+                   (buffer[1] << 4) |  // [11:4]
+                   (buffer[2] >> 4);   // [3:0]
+    // Humidity readout per BME280 data sheet
+    int raw_humidity = (buffer[3] << 8) | // [15:8]
+                       (buffer[4]);       // [7:0]
+    // Check if either measurement was skipped
+    if ((raw_temp == BME280_TEMP_SKIPPED) || (raw_humidity == BME280_HUMID_SKIPPED))
+    {
+        return -EAGAIN;
+    }
+
+    // Run compensenation equations for temperature readings
+    int t_fine = bme280_compensate_temp(dev, raw_temp);
+    *temp = ((t_fine * 5) + 128) >> 8;
+    // Run compensation equations for humdity readings
+    *humidity = bme280_compensate_humidity(dev, t_fine, raw_humidity);
+
     return 0;
 }
 
@@ -152,16 +197,18 @@ static long bme280_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     switch (cmd)
     {
         case BME280_IOC_GET_TEMP:
+        case BME280_IOC_GET_HUMIDITY:
         {
-            int temp = 0;
-            retval = bme280_read_temp(dev, &temp);
+            int temp, humidity = 0;
+            retval = bme280_read_measurements(dev, &temp, &humidity);
             if (retval)
             {
                 break;
             }
 
             // Copy state to user space buffer
-            if (copy_to_user((int __user *)arg, &temp, sizeof(temp)))
+            int request = (cmd == BME280_IOC_GET_TEMP) ? temp : humidity;
+            if (copy_to_user((int __user *)arg, &request, sizeof(request)))
             {
                 retval = -EFAULT;
             }
@@ -226,7 +273,7 @@ static int bme280_hw_init(struct bme280_dev *dev)
         goto unregister_device;
     }
 
-    // Reset sensor before reading temperature data
+    // Reset sensor before reading data
     result = i2c_smbus_write_byte_data(dev->client, BME280_REGISTER_SOFTRESET, BME280_RESET_VALUE);
     if (result)
     {
@@ -234,23 +281,54 @@ static int bme280_hw_init(struct bme280_dev *dev)
     }
     usleep_range(5000, 6000);
 
-    // Read calibration data
-    uint8_t calibration_data[6];
-    result = i2c_smbus_read_i2c_block_data(dev->client, BME280_REGISTER_DIG_T1, 6, calibration_data);
+    // Read temperature calibration data
+    uint8_t temp_calibration[6];
+    result = i2c_smbus_read_i2c_block_data(dev->client, BME280_REGISTER_DIG_T1, 6, temp_calibration);
     if (result != 6)
     {
-        printk(KERN_WARNING "Error reading calibration data: %d\n", result);
+        printk(KERN_WARNING "Error reading temperature calibration data: %d\n", result);
         result = (result < 0) ? result : -EIO;
         goto unregister_device;
     }
+    // Convert and store temperature calibration data per BME280 datasheet
+    dev->calibration.dig_T1 = (uint16_t)(temp_calibration[0] | (temp_calibration[1] << 8));
+    dev->calibration.dig_T2 = (int16_t)(temp_calibration[2] | (temp_calibration[3] << 8));
+    dev->calibration.dig_T3 = (int16_t)(temp_calibration[4] | (temp_calibration[5] << 8));
 
-    // Convert and store calibration data per BME280 datasheet
-    dev->calibration.dig_T1 = (uint16_t)(calibration_data[0] | (calibration_data[1] << 8));
-    dev->calibration.dig_T2 = (int16_t)(calibration_data[2] | (calibration_data[3] << 8));
-    dev->calibration.dig_T3 = (int16_t)(calibration_data[4] | (calibration_data[5] << 8));
+    // Read humidity calibration data
+    result = i2c_smbus_read_byte_data(dev->client, BME280_REGISTER_DIG_H1);
+    if (result < 0)
+    {
+        printk(KERN_WARNING "Error reading humidity calibration data: %d\n", result);
+        goto unregister_device;
+    }
+    dev->calibration.dig_H1 = (uint8_t)result;
 
-    // Temperature x1, pressure off, normal mode: the chip keeps measuring
-    result = i2c_smbus_write_byte_data(dev->client, BME280_REGISTER_CONTROL, BME280_CTRL_MEAS);
+    uint8_t humidity_calibration[7];
+    result = i2c_smbus_read_i2c_block_data(dev->client, BME280_REGISTER_DIG_H2, 7, humidity_calibration);
+    if (result != 7)
+    {
+        printk(KERN_WARNING "Error reading humidity calibration data: %d\n", result);
+        result = (result < 0) ? result : -EIO;
+        goto unregister_device;
+    }
+    // Convert and store humidity calibration data per BME280 datasheet
+    dev->calibration.dig_H2 = (int16_t)(humidity_calibration[0] | (humidity_calibration[1] << 8));
+    dev->calibration.dig_H3 = (uint8_t)humidity_calibration[2];
+    dev->calibration.dig_H4 = (int16_t)((((int8_t)humidity_calibration[3] << 4) | (humidity_calibration[4] & 0x0F)));
+    dev->calibration.dig_H5 = (int16_t)((((int8_t)humidity_calibration[5] << 4) | (humidity_calibration[4] >> 4)));
+    dev->calibration.dig_H6 = (int8_t)humidity_calibration[6];
+
+    // Write humidity measurement command to chip
+    result = i2c_smbus_write_byte_data(dev->client, BME280_REGISTER_CONTROLHUMID, BME280_HUMID_CTRL_MEAS);
+    if (result)
+    {
+        goto unregister_device;
+    }
+    usleep_range(10000, 11000); 
+
+    // Write temperature measurement command to chip
+    result = i2c_smbus_write_byte_data(dev->client, BME280_REGISTER_CONTROL, BME280_TEMP_CTRL_MEAS);
     if (result)
     {
         goto unregister_device;

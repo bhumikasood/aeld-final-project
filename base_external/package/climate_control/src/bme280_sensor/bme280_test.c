@@ -20,16 +20,22 @@ int main(void)
         return 1;
     }
 
-    int temperature;
+    int temperature, humidity;
     while (1)
     {
         if (ioctl(fd, BME280_IOC_GET_TEMP, &temperature) < 0)
         {
-            perror("ioctl call");
+            perror("ioctl temperature");
             break;
         }
 
-        printf("temperature: %.2f C\n", temperature / 100.0);
+        if (ioctl(fd, BME280_IOC_GET_HUMIDITY, &humidity) < 0)
+        {
+            perror("ioctl humidity");
+            break;
+        }
+
+        printf("temperature: %.2f C \t humidity: %.2f %%\n", temperature / 100.0, humidity / 100.0);
         sleep(1);
     }
 
