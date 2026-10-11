@@ -8,7 +8,7 @@ CLIMATE_CONTROL_VERSION = 1.0
 CLIMATE_CONTROL_SITE = $(CLIMATE_CONTROL_PKGDIR)/src
 CLIMATE_CONTROL_SITE_METHOD = local
 CLIMATE_CONTROL_LICENSE = GPL-2.0
-CLIMATE_CONTROL_MODULE_SUBDIRS = rotary_switch push_button bme280_sensor
+CLIMATE_CONTROL_MODULE_SUBDIRS = rotary_switch push_button bme280_sensor lcd_display
 
 # Build
 define CLIMATE_CONTROL_BUILD_CMDS
@@ -23,6 +23,10 @@ define CLIMATE_CONTROL_BUILD_CMDS
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
 		-o $(@D)/bme280_sensor/temp_sensor_test \
 		$(@D)/bme280_sensor/temp_sensor_test.c
+
+	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
+	    -o $(@D)/lcd_display/lcd_test \
+		$(@D)/lcd_display/lcd_test.c
 	
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
         -I$(@D)/rotary_switch -I$(@D)/push_button -I$(@D)/bme280_sensor \
@@ -43,6 +47,10 @@ define CLIMATE_CONTROL_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/temp_sensor_test $(TARGET_DIR)/usr/bin/temp_sensor_test
 	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/temp_sensor_load $(TARGET_DIR)/usr/bin/temp_sensor_load
 	$(INSTALL) -D -m 0755 $(@D)/bme280_sensor/temp_sensor_unload $(TARGET_DIR)/usr/bin/temp_sensor_unload
+
+	$(INSTALL) -D -m 0755 $(@D)/lcd_display/lcd_test $(TARGET_DIR)/usr/bin/lcd_test
+    $(INSTALL) -D -m 0755 $(@D)/lcd_display/lcd_display_load $(TARGET_DIR)/usr/bin/lcd_display_load
+    $(INSTALL) -D -m 0755 $(@D)/lcd_display/lcd_display_unload $(TARGET_DIR)/usr/bin/lcd_display_unload
 
 	$(INSTALL) -D -m 0755 $(@D)/climate_app/climate_app $(TARGET_DIR)/usr/bin/climate_app
 endef

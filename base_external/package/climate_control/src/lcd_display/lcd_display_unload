@@ -1,0 +1,8 @@
+#!/bin/sh
+# Unload the LCD display module and remove /dev/lcd_display.
+
+module="lcd_display"
+device="lcd_display"
+
+rm -f /dev/${device}
+rmmod $module

@@ -321,7 +321,6 @@ static int lcd_init_module(void)
 free_gpios:
     gpio_free_array(lcd_gpio, ARRAY_SIZE(lcd_gpio));
     return result;
-
 }
 
 static void lcd_cleanup_module(void)
