@@ -1,5 +1,5 @@
 /*
- * @file push_button.h
+ * @file button_ioctl.h
  * @author Bhumika Sood 
  * @brief Definitions for a push button driver.
  */

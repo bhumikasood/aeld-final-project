@@ -25,7 +25,7 @@
 
 #define PUSH_BUTTON_GPIO 6
 #define DEBOUNCE_SAMPLES 3
-#define DEBOUNCE_MS      50
+#define DEBOUNCE_MS      20
 
 // Function prototypes
 static int button_open(struct inode *inode, struct file *filp);
@@ -62,7 +62,6 @@ static int button_release(struct inode *inode, struct file *filp)
     PDEBUG("Release Button Device");
     return 0;
 }
-
 
 // Read debounced button state
 static int button_read_state(void)
@@ -153,9 +152,9 @@ static int button_init_module(void)
                               PIN_CONF_PACKED(PIN_CONFIG_BIAS_PULL_UP, 1));
     usleep_range(1000, 2000); 
 
+    // Get device number
     result = alloc_chrdev_region(&dev, button_minor, 1, BUTTON_DEVICE_NAME);
     button_major = MAJOR(dev);
-
     if (result < 0)
     {
         printk(KERN_WARNING "Can't get major %d\n", button_major);
@@ -167,7 +166,6 @@ static int button_init_module(void)
 
     // Register character device
     result = button_setup_cdev(&button_device);
-
     if (result)
     {
         unregister_chrdev_region(dev, 1);
