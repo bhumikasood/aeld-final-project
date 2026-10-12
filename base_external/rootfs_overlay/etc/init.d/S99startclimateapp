@@ -1,0 +1,32 @@
+#!/bin/sh
+# Start the cliamte app after after boot
+# Runs after S99climatedrivers
+
+DAEMON=/usr/bin/climate_app
+PIDFILE=/var/run/climate_app.pid
+
+case "$1" in
+    start)
+        echo "Starting climate app"
+        start-stop-daemon -S -b -m -p $PIDFILE -x /bin/sh -- -c "exec $DAEMON > /dev/console 2>&1"
+    ;;
+
+    stop)
+        echo "Stopping climate app"
+        start-stop-daemon -K -p $PIDFILE
+        rm -f $PIDFILE
+    ;;
+
+    restart)
+        $0 stop
+        $0 start
+    ;;
+
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+    ;;
+
+esac
+
+exit 0
