@@ -1,5 +1,5 @@
 /**
- * @file temp_sensor.c
+ * @file climate_app.c
  * @author Bhumika Sood
  * @brief Reads inputs from the climate control devices and prints results to console.
  */
@@ -14,7 +14,7 @@
 
 #include "rotary_ioctl.h"
 #include "button_ioctl.h"
-#include "temp_ioctl.h"
+#include "bme280_ioctl.h"
 
 #define POLL_INTERVAL_US 20000
 #define PRINT_INTERVAL_S 2  
@@ -66,9 +66,10 @@ int main(void)
     int previous_button_state = BUTTON_RELEASED;
     int current_button_state = BUTTON_UNKNOWN;
     // Initial values for BME280 sensor
-    int temp_fd;
+    int bme280_fd;
     int temp_c, temp_status = 0;
-    float temp_f;
+    int humidity, humidity_status = 0;
+    float temp_f, relative_humidity;
 
     // Timer values
     struct timespec current_time, previous_time;
@@ -84,7 +85,7 @@ int main(void)
     // Open devices
     rotary_fd = open_device("/dev/" ROTARY_DEVICE_NAME);
     button_fd = open_device("/dev/" BUTTON_DEVICE_NAME);
-    temp_fd = open_device("/dev/" TEMP_DEVICE_NAME);
+    bme280_fd = open_device("/dev/" BME280_DEVICE_NAME);
 
     printf("Climate Control System Started\n");
 
@@ -145,22 +146,33 @@ int main(void)
         {
             previous_time = current_time;
 
-            if (temp_fd >= 0)
+            if (bme280_fd >= 0)
             {
-                temp_status = (ioctl(temp_fd, TEMP_IOC_GET_TEMP, &temp_c) == 0);
-                if (!temp_status && running)
+                temp_status = (ioctl(bme280_fd, BME280_IOC_GET_TEMP, &temp_c) == 0);
+                humidity_status = (ioctl(bme280_fd, BME280_IOC_GET_HUMIDITY, &humidity) == 0);
+
+                if (temp_status)
+                {
+                    temp_f = celcius_to_fahrenheit(temp_c);
+                }
+                else if (running)
                 {
                     perror("temperature ioctl");
                 }
+
+                if (!humidity_status && running)
+                {
+                    perror("humidity ioctl");
+                }
                 else
                 {
-                    temp_f = celcius_to_fahrenheit(temp_c);
+                    relative_humidity = humidity / 100.0;
                 }
             }
             
             // Print status of all devices
-            printf("[status] mode: %-4s | rotary: %d | temp: %.1f F\n",
-                climate_modes[current_mode], current_rotary_position, temp_f);
+            printf("[status] mode: %-4s | rotary: %d | temp: %.1f F | humidity: %.1f %%\n",
+                climate_modes[current_mode], current_rotary_position, temp_f, relative_humidity);
         }
 
         usleep(POLL_INTERVAL_US);
@@ -177,9 +189,9 @@ int main(void)
     {
         close(button_fd);
     }
-    if (temp_fd >= 0)
+    if (bme280_fd >= 0)
     {
-        close(temp_fd);
+        close(bme280_fd);
     }
 
     return 0;
