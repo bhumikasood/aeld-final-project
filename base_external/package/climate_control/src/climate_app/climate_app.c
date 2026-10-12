@@ -1,7 +1,7 @@
 /**
  * @file climate_app.c
  * @author Bhumika Sood
- * @brief Reads inputs from the climate control devices and prints results to console.
+ * @brief Reads inputs from the climate control devices and writes results to LCD.
  */
 
 #include <stdio.h>
@@ -11,13 +11,34 @@
 #include <errno.h>
 #include <signal.h>
 #include <time.h>
+#include <string.h>
 
 #include "rotary_ioctl.h"
 #include "button_ioctl.h"
 #include "bme280_ioctl.h"
+#include "lcd_ioctl.h"
 
-#define POLL_INTERVAL_US 20000
-#define PRINT_INTERVAL_S 2  
+// Timing details
+#define POLL_INTERVAL_US    20000
+#define SENSOR_INTERVAL_MS  2000
+#define PRINT_INTERVAL_S    2
+#define SET_TEMP_TIMEOUT    5
+
+// LCD settings
+#define DEGREE_SYMBOL   "\337"
+#define LCD_MODE_COL    12
+
+enum lcd_states
+{
+    STATUS_SCREEN = 0, 
+    SET_TEMP_SCREEN
+};
+
+// Climate settings
+#define TEMP_DEFAULT_F  78  
+#define TEMP_MIN_F      60
+#define TEMP_MAX_F      85
+#define TEMP_STEP       1
 
 const char *climate_modes[] = {"HEAT", "COOL", "OFF"};
 
@@ -26,8 +47,11 @@ static volatile sig_atomic_t running = 1;
 
 // Function prototypes
 static void signal_handler(int signal_num);
-static int open_device(const char *node);
+static int open_device(const char *node, int flag);
 static float celcius_to_fahrenheit(int temp_c);
+static int rotary_step(int previous, int current);
+static void format_status_screen(char *lcd_output, size_t size, int temp, int humidity, int mode);
+static void format_temp_screen(char *lcd_output, size_t size, int desired_temp);
 
 static void signal_handler(int signal_num)
 {
@@ -36,9 +60,9 @@ static void signal_handler(int signal_num)
 }
 
 // Open device
-static int open_device(const char *node)
+static int open_device(const char *node, int flag)
 {
-    int fd = open(node, O_RDONLY);
+    int fd = open(node, flag);
     if (fd < 0)
     {
         perror(node);
@@ -54,12 +78,52 @@ static float celcius_to_fahrenheit(int temp_c)
     return temp_fahrenheit;
 }
 
+// Return number of steps rotary switch moved
+static int rotary_step(int previous, int current)
+{
+    int step = (current - previous + ROTARY_NUM_POSITIONS) % ROTARY_NUM_POSITIONS;
+ 
+    if (step > ROTARY_NUM_POSITIONS / 2)
+    {
+        step -= ROTARY_NUM_POSITIONS;
+    }
+    return step;
+}
+
+// Format LCD status screen
+static void format_status_screen(char *lcd_output, size_t size, int temp, int humidity, int mode)
+{
+    char temp_text[16];      // TEMP:XX*F
+    char humidity_text[16];  // HUMID:XX% 
+
+    // Temperature output
+    snprintf(temp_text, sizeof(temp_text), "TEMP:%02d" DEGREE_SYMBOL "F", temp);
+    // Humidity output
+    snprintf(humidity_text, sizeof(humidity_text), "HUMID:%02d%%", humidity);
+
+    // Format rows 1 and 2 of LCD out with Mode right justified on the first row
+    snprintf(lcd_output, size, "%-*.*s%4.4s\n%.*s",
+             LCD_MODE_COL, LCD_MODE_COL, temp_text, climate_modes[mode],
+             LCD_COLUMNS, humidity_text);
+}
+
+// Format LCD set temp screen
+static void format_temp_screen(char *lcd_output, size_t size, int desired_temp)
+{
+    char set_temp_text[16];  // SET TEMP:XX
+
+    // Temperature output
+    snprintf(set_temp_text, sizeof(set_temp_text), "SET TEMP:%02d", desired_temp);
+    snprintf(lcd_output, size, "%.*s\n", LCD_COLUMNS, set_temp_text);
+}
+
 int main(void)
 {
     // Initial values for rotary switch
     int rotary_fd;
     int previous_rotary_position = ROTARY_POS_UNKNOWN;
-    int current_rotary_position = ROTARY_POS_UNKNOWN; 
+    int current_rotary_position = ROTARY_POS_UNKNOWN;
+    int step_value = 0; 
     // Initial values for push button
     int button_fd;
     int current_mode = 2; 
@@ -69,28 +133,38 @@ int main(void)
     int bme280_fd;
     int temp_c, temp_status = 0;
     int humidity, humidity_status = 0;
-    float temp_f, relative_humidity;
+    float temp_f, relative_humidity = 0;
+    // Initial values for LCD display
+    int lcd_fd;
+    int current_screen = STATUS_SCREEN;
+    int desired_temp = TEMP_DEFAULT_F;
+    char lcd_output[34];
+    static char previous_lcd_output[34] = "";
 
     // Timer values
-    struct timespec current_time, previous_time;
+    struct timespec current_time, previous_time, rotary_time;
     clock_gettime(CLOCK_MONOTONIC, &previous_time);
     // Set previous time behind by 2 seconds
     previous_time.tv_sec -= PRINT_INTERVAL_S;
-
+    rotary_time = previous_time;
 
     // Handle signals
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
     // Open devices
-    rotary_fd = open_device("/dev/" ROTARY_DEVICE_NAME);
-    button_fd = open_device("/dev/" BUTTON_DEVICE_NAME);
-    bme280_fd = open_device("/dev/" BME280_DEVICE_NAME);
+    rotary_fd = open_device("/dev/" ROTARY_DEVICE_NAME, O_RDONLY);
+    button_fd = open_device("/dev/" BUTTON_DEVICE_NAME, O_RDONLY);
+    bme280_fd = open_device("/dev/" BME280_DEVICE_NAME, O_RDONLY);
+    lcd_fd = open_device("/dev/" LCD_DEVICE_NAME, O_WRONLY);
 
     printf("Climate Control System Started\n");
 
     while (running)
     {
+        // Get current time
+        clock_gettime(CLOCK_MONOTONIC, &current_time);
+
         // Rotary switch
         if (rotary_fd >= 0)
         {
@@ -106,7 +180,17 @@ int main(void)
             else if ((current_rotary_position != ROTARY_POS_UNKNOWN) && 
                     (current_rotary_position != previous_rotary_position))
             {
-                // printf("rotary position: %d\n", current_rotary_position);
+                if (previous_rotary_position != ROTARY_POS_UNKNOWN)
+                {
+                    // Change desired temperature in accordance with rotary switch
+                    step_value = rotary_step(previous_rotary_position, current_rotary_position);
+                    desired_temp += step_value * TEMP_STEP;
+                    // Limit desired temperature to min or max values
+                    desired_temp = (desired_temp < TEMP_MIN_F) ? TEMP_MIN_F : 
+                                   (desired_temp > TEMP_MAX_F) ? TEMP_MAX_F : desired_temp;
+                    current_screen = SET_TEMP_SCREEN;
+                    rotary_time = current_time;
+                }
                 previous_rotary_position = current_rotary_position;
             }
         }
@@ -175,12 +259,43 @@ int main(void)
                 climate_modes[current_mode], current_rotary_position, temp_f, relative_humidity);
         }
 
-        usleep(POLL_INTERVAL_US);
+        // Display on LCD
+        if (current_screen == SET_TEMP_SCREEN && ((current_time.tv_sec - rotary_time.tv_sec) >= SET_TEMP_TIMEOUT))
+        {
+            current_screen = STATUS_SCREEN;
+        }
+ 
+        if (current_screen == SET_TEMP_SCREEN)
+        {
+            format_temp_screen(lcd_output, sizeof(lcd_output), desired_temp);
+        }
+        else
+        {
+            format_status_screen(lcd_output, sizeof(lcd_output), (int)temp_f, (int)relative_humidity, current_mode);
+        }
 
+        // Only update LCD if output has changed
+        if (lcd_fd >= 0 && strcmp(lcd_output, previous_lcd_output) != 0)
+        {
+            if (write(lcd_fd, lcd_output, strlen(lcd_output)) < 0)
+            {
+                perror("lcd write");
+            }
+            else
+            {
+                strcpy(previous_lcd_output, lcd_output);
+            }
+        }
+        usleep(POLL_INTERVAL_US);
     }
 
     printf("Stopping Climate Control System\n");
 
+    if (lcd_fd >= 0)
+    {
+        ioctl(lcd_fd, LCD_IOC_CLEAR);
+        close(lcd_fd);
+    }
     if (rotary_fd >= 0)
     {
         close(rotary_fd);

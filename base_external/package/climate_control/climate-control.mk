@@ -29,7 +29,7 @@ define CLIMATE_CONTROL_BUILD_CMDS
 		$(@D)/lcd_display/lcd_test.c
 	
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
-        -I$(@D)/rotary_switch -I$(@D)/push_button -I$(@D)/bme280_sensor \
+        -I$(@D)/rotary_switch -I$(@D)/push_button -I$(@D)/bme280_sensor -I$(@D)/lcd_display \
         -o $(@D)/climate_app/climate_app \
         $(@D)/climate_app/climate_app.c
 endef
