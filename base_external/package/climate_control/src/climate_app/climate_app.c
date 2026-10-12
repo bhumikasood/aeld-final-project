@@ -255,8 +255,8 @@ int main(void)
             }
             
             // Print status of all devices
-            printf("[status] mode: %-4s | rotary: %d | temp: %.1f F | humidity: %.1f %%\n",
-                climate_modes[current_mode], current_rotary_position, temp_f, relative_humidity);
+            printf("[status] mode: %-4s | set temp: %d F | actual temp: %.2f F | humidity: %.2f %%\n",
+                climate_modes[current_mode], desired_temp, temp_f, relative_humidity);
         }
 
         // Display on LCD

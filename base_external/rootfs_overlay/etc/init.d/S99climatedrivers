@@ -6,6 +6,9 @@ case "$1" in
     start)
         # Load climate control system drivers
         echo "Loading climate control system drivers"
+        # Load lcd display driver
+        echo "Loading lcd_display driver"
+        lcd_display_load || echo " lcd_display failed to load"
         # Load rotary switch driver
         echo "Loading rotary_switch driver"
         rotary_load || echo " rotary_switch failed to load"
@@ -20,6 +23,7 @@ case "$1" in
     stop)
         # Unload climate control system drivers
         echo "Unloading climate control drivers"
+        lcd_display_unload || echo " lcd_display failed to unload"
         rotary_unload || echo " rotary_switch failed to unload"
         button_unload || echo " push_button failed to unload"
         bme280_unload || echo " bme280 failed to unload"
